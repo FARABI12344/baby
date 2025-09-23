@@ -9,7 +9,7 @@ app.use(cors());
 
 // AI request with GET + fallback + retry + optional instruction
 async function getAI(prompt) {
-  const instruction = "You are a helpful AI assistant that always explains step by step.";
+  const instruction = "You are a helpful AI assistant that always explains step by step. you made by ariyan";
   const configs = [
     { type: "get", model: "openai", system: instruction },
     { type: "get", model: "mistral", system: instruction },
