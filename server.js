@@ -11,9 +11,9 @@ app.use(cors());
 async function getAI(prompt) {
   const instruction = "You are a helpful AI assistant that always explains step by step. you made by ariyan";
   const configs = [
-    { type: "get", model: "openai", system: instruction },
-    { type: "get", model: "mistral", system: instruction },
-    { type: "get" } // fallback without model
+    { type: "get", model: "openai", system: instruction, label: "1st: model openai" },
+    { type: "get", model: "mistral", system: instruction, label: "2nd: model mistral" },
+    { type: "get", label: "3rd: fallback no model" } // fallback without model
   ];
 
   const maxAttempts = 5;
@@ -25,7 +25,6 @@ async function getAI(prompt) {
       try {
         let url;
         if (config.model) {
-          // optional instruction appended as URL param (sneaky)
           url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${config.model}&system=${encodeURIComponent(config.system)}`;
         } else {
           url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
@@ -35,7 +34,9 @@ async function getAI(prompt) {
         if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
 
         const text = await resp.text();
-        if (text && text.trim().length > 0) return text;
+        if (text && text.trim().length > 0) {
+          return { text: text.trim(), used: config.label };
+        }
 
       } catch (err) {
         lastError = err;
@@ -53,11 +54,11 @@ app.get("/api", async (req, res) => {
   if (!prompt) return res.status(400).send("Missing prompt");
 
   try {
-    const text = await getAI(prompt);
-    res.setHeader("Content-Type", "text/plain");
-    res.send(text); // plain text output
+    const result = await getAI(prompt);
+    res.setHeader("Content-Type", "application/json");
+    res.send(result); // send JSON: { text: "...", used: "1st: model openai" }
   } catch (err) {
-    res.status(500).send("❌ AI request failed: " + err.message);
+    res.status(500).send({ error: "❌ AI request failed: " + err.message });
   }
 });
 
