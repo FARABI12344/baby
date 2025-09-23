@@ -7,12 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// AI request with POST + system instruction + fallback GET + retry
+// AI request with GET + fallback + retry
 async function getAI(prompt) {
   const configs = [
-    { type: "post", model: "mistral", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
-    { type: "post", model: "openai", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
-    { type: "get" } // simple GET fallback
+    { type: "get", model: "openai" },
+    { type: "get", model: "mistral" },
+    { type: "get" } // fallback without model
   ];
 
   const maxAttempts = 5;
@@ -22,28 +22,17 @@ async function getAI(prompt) {
   while (attempt < maxAttempts) {
     for (const config of configs) {
       try {
-        let text;
-
-        if (config.type === "post") {
-          const resp = await fetch("https://text.pollinations.ai", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: config.model,
-              system: config.system,
-              prompt: prompt,
-              temperature: 0.7
-            })
-          });
-          if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
-          text = await resp.text();
-        } else if (config.type === "get") {
-          const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
-          const resp = await fetch(url);
-          if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
-          text = await resp.text();
+        let url;
+        if (config.model) {
+          url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${config.model}`;
+        } else {
+          url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
         }
 
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
+
+        const text = await resp.text();
         if (text && text.trim().length > 0) return text;
 
       } catch (err) {
