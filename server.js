@@ -5,27 +5,59 @@ import cors from "cors";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors()); // allow requests from anywhere
+app.use(cors());
 
-// AI endpoint
+// AI request with POST + system instruction + fallback retry
+async function getAI(prompt) {
+  const urls = [
+    { model: "mistral", system: "You are an AI chat bot build by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
+    { model: "openai", system: "You are an AI chat bot build by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." }
+  ];
+
+  const maxAttempts = 5;
+  let attempt = 0;
+
+  while (attempt < maxAttempts) {
+    for (const config of urls) {
+      try {
+        const resp = await fetch("https://text.pollinations.ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: config.model,
+            system: config.system,
+            prompt: prompt,
+            temperature: 0.7
+          })
+        });
+
+        if (!resp.ok) throw new Error(resp.statusText);
+
+        const text = await resp.text();
+        if (text && text.trim().length > 0) return text;
+
+      } catch (err) {
+        // silently continue to next model
+        continue;
+      }
+    }
+    attempt++;
+  }
+
+  throw new Error("Failed to get AI response after multiple attempts");
+}
+
 app.get("/api", async (req, res) => {
   const prompt = req.query.prompt;
-  if (!prompt) return res.status(400).json({ error: "Missing prompt" });
+  if (!prompt) return res.status(400).send("Missing prompt");
 
   try {
-    // Forward request to Pollinations
-    const response = await fetch(
-      "https://text.pollinations.ai/" + encodeURIComponent(prompt)
-    );
-
-    const text = await response.text();
-
-    // Return JSON
-    res.json({ reply: text });
+    const text = await getAI(prompt);
+    res.setHeader("Content-Type", "text/plain");
+    res.send(text); // plain text output
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).send("❌ AI request failed: " + err.message);
   }
 });
 
-// Start server
 app.listen(PORT, () => console.log(`✅ AI Proxy running on port ${PORT}`));
