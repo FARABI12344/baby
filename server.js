@@ -7,15 +7,16 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// AI request with POST + system instruction + fallback retry
+// AI request with POST + system instruction + fallback retry + detailed error
 async function getAI(prompt) {
   const urls = [
-    { model: "mistral", system: "You are an AI chat bot build by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
-    { model: "openai", system: "You are an AI chat bot build by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." }
+    { model: "mistral", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
+    { model: "openai", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." }
   ];
 
   const maxAttempts = 5;
   let attempt = 0;
+  let lastError = null;
 
   while (attempt < maxAttempts) {
     for (const config of urls) {
@@ -31,20 +32,22 @@ async function getAI(prompt) {
           })
         });
 
-        if (!resp.ok) throw new Error(resp.statusText);
+        if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
 
         const text = await resp.text();
         if (text && text.trim().length > 0) return text;
 
       } catch (err) {
-        // silently continue to next model
-        continue;
+        // store error to report later
+        lastError = err;
+        continue; // try next model
       }
     }
     attempt++;
   }
 
-  throw new Error("Failed to get AI response after multiple attempts");
+  // Throw the last error we encountered, or a generic message
+  throw new Error(`Failed to get AI response after ${maxAttempts} attempts. Last error: ${lastError ? lastError.message : "unknown error"}`);
 }
 
 app.get("/api", async (req, res) => {
