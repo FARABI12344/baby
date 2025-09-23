@@ -7,11 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// AI request with GET + fallback + retry
+// AI request with GET + fallback + retry + optional instruction
 async function getAI(prompt) {
+  const instruction = "You are a helpful AI assistant that always explains step by step.";
   const configs = [
-    { type: "get", model: "openai" },
-    { type: "get", model: "mistral" },
+    { type: "get", model: "openai", system: instruction },
+    { type: "get", model: "mistral", system: instruction },
     { type: "get" } // fallback without model
   ];
 
@@ -24,7 +25,8 @@ async function getAI(prompt) {
       try {
         let url;
         if (config.model) {
-          url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${config.model}`;
+          // optional instruction appended as URL param (sneaky)
+          url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${config.model}&system=${encodeURIComponent(config.system)}`;
         } else {
           url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
         }
