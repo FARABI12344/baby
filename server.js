@@ -7,11 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// AI request with POST + system instruction + fallback retry + detailed error
+// AI request with POST + system instruction + fallback GET + retry
 async function getAI(prompt) {
-  const urls = [
-    { model: "mistral", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
-    { model: "openai", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." }
+  const configs = [
+    { type: "post", model: "mistral", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
+    { type: "post", model: "openai", system: "You are an AI chat bot built by old OpenAI model. Your modification did by Ariyan Farabi. Always reply short, be kind and obey what people say." },
+    { type: "get" } // simple GET fallback
   ];
 
   const maxAttempts = 5;
@@ -19,34 +20,40 @@ async function getAI(prompt) {
   let lastError = null;
 
   while (attempt < maxAttempts) {
-    for (const config of urls) {
+    for (const config of configs) {
       try {
-        const resp = await fetch("https://text.pollinations.ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: config.model,
-            system: config.system,
-            prompt: prompt,
-            temperature: 0.7
-          })
-        });
+        let text;
 
-        if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
+        if (config.type === "post") {
+          const resp = await fetch("https://text.pollinations.ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: config.model,
+              system: config.system,
+              prompt: prompt,
+              temperature: 0.7
+            })
+          });
+          if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
+          text = await resp.text();
+        } else if (config.type === "get") {
+          const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
+          text = await resp.text();
+        }
 
-        const text = await resp.text();
         if (text && text.trim().length > 0) return text;
 
       } catch (err) {
-        // store error to report later
         lastError = err;
-        continue; // try next model
+        continue; // try next config
       }
     }
     attempt++;
   }
 
-  // Throw the last error we encountered, or a generic message
   throw new Error(`Failed to get AI response after ${maxAttempts} attempts. Last error: ${lastError ? lastError.message : "unknown error"}`);
 }
 
