@@ -7,12 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// AI request with GET + fallback + retry + optional instruction
+// AI request with POST for model + instructions, fallback GET without model
 async function getAI(prompt) {
-  const instruction = "You are a helpful AI assistant that always explains step by step. you made by ariyan";
+  const instruction = "You are a helpful AI assistant that always explains step by step. You were made by Ariyan.";
   const configs = [
-    { type: "get", model: "openai", system: instruction, label: "1st: model openai" },
-    { type: "get", model: "mistral", system: instruction, label: "2nd: model mistral" },
+    { type: "post", model: "openai", system: instruction, label: "1st: model openai" },
+    { type: "post", model: "mistral", system: instruction, label: "2nd: model mistral" },
     { type: "get", label: "3rd: fallback no model" } // fallback without model
   ];
 
@@ -23,17 +23,29 @@ async function getAI(prompt) {
   while (attempt < maxAttempts) {
     for (const config of configs) {
       try {
-        let url;
-        if (config.model) {
-          url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${config.model}&system=${encodeURIComponent(config.system)}`;
-        } else {
-          url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
+        let text;
+
+        if (config.type === "post") {
+          const resp = await fetch("https://text.pollinations.ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: config.model,
+              system: config.system,
+              prompt: prompt,
+              temperature: 0.7
+            })
+          });
+          if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
+          text = await resp.text();
+
+        } else if (config.type === "get") {
+          const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}`;
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
+          text = await resp.text();
         }
 
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
-
-        const text = await resp.text();
         if (text && text.trim().length > 0) {
           return { text: text.trim(), used: config.label };
         }
@@ -51,12 +63,12 @@ async function getAI(prompt) {
 
 app.get("/api", async (req, res) => {
   const prompt = req.query.prompt;
-  if (!prompt) return res.status(400).send("Missing prompt");
+  if (!prompt) return res.status(400).send({ error: "Missing prompt" });
 
   try {
     const result = await getAI(prompt);
     res.setHeader("Content-Type", "application/json");
-    res.send(result); // send JSON: { text: "...", used: "1st: model openai" }
+    res.send(result); // { text: "...", used: "1st: model openai" }
   } catch (err) {
     res.status(500).send({ error: "❌ AI request failed: " + err.message });
   }
