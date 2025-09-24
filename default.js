@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 
-// === Default AI (chatbot style) ===
+// === Default AI (friendly chatbot) ===
 export async function getAI(userKey, userPrompt, useMemory, conversationMemory, MEMORY_LIMIT) {
   const instruction = `You are a AI chatbot made by OpenAI, modified by Ariyan Farabi.
 You are professional, friendly, and respectful. Always reply clearly, adapting to user's style if they are Gen Z.
@@ -15,18 +15,22 @@ Rules:
 - Avoid confusion between topic context and AI behavior.
 `;
 
+  // restore memory if enabled
   let history = [];
   if (useMemory) {
     const data = conversationMemory.get(userKey) || { history: [], lastActive: Date.now() };
-    history = data.history.slice(-6); // last 3 exchanges (user + AI)
+    history = data.history.slice(-6); // last 3 exchanges
   }
 
+  // build conversation text
   let chatHistoryText = history
     .map(msg => `${msg.isUser ? "User" : "Assistant"}: ${msg.text}`)
     .join("\n");
 
+  // final prompt
   const fullPrompt = `${instruction}\n${chatHistoryText}\nUser: ${userPrompt}\nAssistant:`;
 
+  // try models in order
   const configs = [
     { model: "openai", label: "1st: model openai" },
     { model: "mistral", label: "2nd: model mistral" },
@@ -52,7 +56,7 @@ Rules:
 
       if (text && text.trim().length > 0) {
         if (useMemory) {
-          // Update memory
+          // update memory
           history.push({ isUser: true, text: userPrompt });
           history.push({ isUser: false, text: text.trim() });
           if (history.length > MEMORY_LIMIT * 2) {
