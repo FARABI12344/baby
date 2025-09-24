@@ -16,7 +16,7 @@ const conversationMemory = new Map();
 const MEMORY_LIMIT = 10; // Keep last 10 messages per user
 const MEMORY_TTL = 1 * 60 * 1000; // 1 minute
 
-// 🧹 Periodically clean expired memory
+// Periodically clean expired memory
 setInterval(() => {
   const now = Date.now();
   for (const [user, data] of conversationMemory.entries()) {
@@ -24,10 +24,10 @@ setInterval(() => {
       conversationMemory.delete(user);
     }
   }
-}, 60 * 1000); // run cleanup every minute
+}, 60 * 1000);
 
-// Get AI response with memory + fallback
-async function getAI(userKey, userPrompt) {
+// Get AI response
+async function getAI(userKey, userPrompt, useMemory) {
   const instruction = `You are a AI chatbot made by OpenAI. You were modified by Ariyan Farabi.
 Make sure to never forget that you are a professional AI bot. Your text must show that professional thingy. You have to look at people's body language how they talk then adapt it and talk it like them if they're gen z then
 talk them like that. But don't go outside of rules.
@@ -44,9 +44,11 @@ No impersonation – never pretend to be Roblox staff or other players.
 Context-aware – remember previous messages in the conversation to respond naturally.
 `;
 
-  // Get memory
-  let data = conversationMemory.get(userKey) || { history: [], lastActive: Date.now() };
-  let history = data.history;
+  let history = [];
+  if (useMemory) {
+    const data = conversationMemory.get(userKey) || { history: [], lastActive: Date.now() };
+    history = data.history;
+  }
 
   let chatHistoryText = history
     .map(msg => `${msg.isUser ? "User" : "Assistant"}: ${msg.text}`)
@@ -78,30 +80,29 @@ Context-aware – remember previous messages in the conversation to respond natu
       const text = await resp.text();
 
       if (text && text.trim().length > 0) {
-        // Update memory
-        history.push({ isUser: true, text: userPrompt });
-        history.push({ isUser: false, text: text.trim() });
-
-        // Limit memory size
-        if (history.length > MEMORY_LIMIT * 2) {
-          history = history.slice(-MEMORY_LIMIT * 2);
+        if (useMemory) {
+          // Update memory
+          history.push({ isUser: true, text: userPrompt });
+          history.push({ isUser: false, text: text.trim() });
+          if (history.length > MEMORY_LIMIT * 2) {
+            history = history.slice(-MEMORY_LIMIT * 2);
+          }
+          conversationMemory.set(userKey, { history, lastActive: Date.now() });
         }
-
-        conversationMemory.set(userKey, { history, lastActive: Date.now() });
         return { text: text.trim(), used: config.label };
       }
     } catch {
-      continue; // try next config
+      continue;
     }
   }
 
   throw new Error("Failed to get AI response after trying all models");
 }
 
-// Route handler (supports both /?prompt=hi and /hi)
+// Route handler
 app.get("*", async (req, res) => {
-  const prompt = req.query.prompt || req.path.slice(1); // prefer ?prompt= else use path
-  const user = req.query.user || req.ip; // use user param or fallback to IP
+  const prompt = req.query.prompt || req.path.slice(1); // prefer ?prompt= else path
+  const user = req.query.user; // only use memory if user param exists
   const now = Date.now();
 
   if (!prompt) {
@@ -109,18 +110,21 @@ app.get("*", async (req, res) => {
     return;
   }
 
+  const userKey = user || req.ip;
+  const useMemory = Boolean(user); // true only if &user= exists
+
   // Cooldown check
-  if (cooldowns.has(user)) {
-    const lastTime = cooldowns.get(user);
+  if (cooldowns.has(userKey)) {
+    const lastTime = cooldowns.get(userKey);
     if (now - lastTime < COOLDOWN_MS) {
-      res.status(429).send("Hello! Slow down ⏳ one sec before sending again.");
+      res.status(429).send("Hello! Slow down, one sec before sending again.");
       return;
     }
   }
-  cooldowns.set(user, now);
+  cooldowns.set(userKey, now);
 
   try {
-    const result = await getAI(user, prompt);
+    const result = await getAI(userKey, prompt, useMemory);
     res.setHeader("Content-Type", "text/plain");
     res.send(result.text);
   } catch (err) {
