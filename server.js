@@ -7,36 +7,48 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Simple cooldown map by user
+// Cooldown map by user
 const cooldowns = new Map();
-const COOLDOWN_MS = 1000; // 1 second
+const COOLDOWN_MS = 1000; // 1 sec
 
 // Conversation memory per user
 const conversationMemory = new Map();
 const MEMORY_LIMIT = 10; // Keep last 10 messages per user
+const MEMORY_TTL = 10 * 60 * 1000; // 10 minutes
 
-// AI request with multiline instruction + fallback logic
+// 🧹 Periodically clean expired memory
+setInterval(() => {
+  const now = Date.now();
+  for (const [user, data] of conversationMemory.entries()) {
+    if (now - data.lastActive > MEMORY_TTL) {
+      conversationMemory.delete(user);
+    }
+  }
+}, 60 * 1000); // run cleanup every minute
+
+// Get AI response with memory + fallback
 async function getAI(userKey, userPrompt) {
   const instruction = `You are a AI chatbot made by OpenAI. You were modified by Ariyan Farabi.
-Always reply in short,
+Always reply in short.
 Friendly and respectful – no mean or rude words.  
 Child-safe – avoid adult content, swearing, or sexual references.  
-No personal info – never ask for or share names, addresses, phone numbers, social media, or external links (like Discord).  
+No personal info – never ask for or share names, addresses, phone numbers, social media, or external links.  
 No spamming – short, clear, fun messages.  
 Positive & playful – use emojis, fun expressions, and gaming slang appropriate for ages 8+.  
 No impersonation – never pretend to be Roblox staff or other players.  
-Context-aware – remember previous messages in the conversation to respond naturally, without repeating yourself.  
+Context-aware – remember previous messages in the conversation to respond naturally.  
 Helpful & cooperative – answer questions, offer tips, or play along with the game, but never suggest leaving Roblox to another platform.  
 **Keep it short** – 1–3 sentences per message.
 `;
 
-  // Get conversation history for this user
-  let history = conversationMemory.get(userKey) || [];
+  // Get memory
+  let data = conversationMemory.get(userKey) || { history: [], lastActive: Date.now() };
+  let history = data.history;
+
   let chatHistoryText = history
     .map(msg => `${msg.isUser ? "User" : "Assistant"}: ${msg.text}`)
     .join("\n");
 
-  // Build full prompt with memory
   const fullPrompt = `${instruction}\n${chatHistoryText}\nUser: ${userPrompt}\nAssistant:`;
 
   const configs = [
@@ -63,16 +75,16 @@ Helpful & cooperative – answer questions, offer tips, or play along with the g
       const text = await resp.text();
 
       if (text && text.trim().length > 0) {
-        // Save this message to memory
+        // Update memory
         history.push({ isUser: true, text: userPrompt });
         history.push({ isUser: false, text: text.trim() });
 
-        // Keep only last MEMORY_LIMIT messages
+        // Limit memory size
         if (history.length > MEMORY_LIMIT * 2) {
           history = history.slice(-MEMORY_LIMIT * 2);
         }
 
-        conversationMemory.set(userKey, history);
+        conversationMemory.set(userKey, { history, lastActive: Date.now() });
         return { text: text.trim(), used: config.label };
       }
     } catch {
@@ -83,10 +95,10 @@ Helpful & cooperative – answer questions, offer tips, or play along with the g
   throw new Error("Failed to get AI response after trying all models");
 }
 
-// Handle prompt via query params: /?prompt=hi&user=123
-app.get("/", async (req, res) => {
-  const prompt = req.query.prompt;
-  const user = req.query.user || req.ip; // prefer user, fallback to IP
+// Route handler (supports both /?prompt=hi and /hi)
+app.get("*", async (req, res) => {
+  const prompt = req.query.prompt || req.path.slice(1); // prefer ?prompt= else use path
+  const user = req.query.user || req.ip; // use user param or fallback to IP
   const now = Date.now();
 
   if (!prompt) {
@@ -98,9 +110,7 @@ app.get("/", async (req, res) => {
   if (cooldowns.has(user)) {
     const lastTime = cooldowns.get(user);
     if (now - lastTime < COOLDOWN_MS) {
-      res.status(429).send(
-        "Hello! Slow down ⏳ one sec before sending again."
-      );
+      res.status(429).send("Hello! Slow down ⏳ one sec before sending again.");
       return;
     }
   }
@@ -109,7 +119,7 @@ app.get("/", async (req, res) => {
   try {
     const result = await getAI(user, prompt);
     res.setHeader("Content-Type", "text/plain");
-    res.send(result.text); // plain text response
+    res.send(result.text);
   } catch (err) {
     res.status(500).send(`❌ AI request failed: ${err.message}`);
   }
