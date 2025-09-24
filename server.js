@@ -8,14 +8,14 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Cooldown + memory maps (shared)
+// Shared cooldown + memory
 const cooldowns = new Map();
-const COOLDOWN_MS = 1000;
+const COOLDOWN_MS = 1000; // 1 second
 const conversationMemory = new Map();
-const MEMORY_LIMIT = 10;
-const MEMORY_TTL = 60 * 1000;
+const MEMORY_LIMIT = 10; // store last 10 user+assistant exchanges
+const MEMORY_TTL = 60 * 1000; // 1 minute
 
-// cleanup expired memory
+// Clean expired memory
 setInterval(() => {
   const now = Date.now();
   for (const [user, data] of conversationMemory.entries()) {
@@ -25,8 +25,9 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
-// Route handler
+// === Route handler ===
 app.get("*", async (req, res) => {
+  // extract prompt (from query or path)
   const prompt = req.query.prompt || req.path.slice(1);
   const user = req.query.user;
   const model = req.query.model || "default";
@@ -40,11 +41,11 @@ app.get("*", async (req, res) => {
   const userKey = user || req.ip;
   const useMemory = Boolean(user);
 
-  // cooldown
+  // cooldown check
   if (cooldowns.has(userKey)) {
     const lastTime = cooldowns.get(userKey);
     if (now - lastTime < COOLDOWN_MS) {
-      res.status(429).send("⚡ Slow down, wait a sec!");
+      res.status(429).send("⚡ Slow down, wait a sec before sending again.");
       return;
     }
   }
@@ -57,6 +58,7 @@ app.get("*", async (req, res) => {
     } else {
       result = await getAI(userKey, prompt, useMemory, conversationMemory, MEMORY_LIMIT);
     }
+
     res.setHeader("Content-Type", "text/plain");
     res.send(result.text);
   } catch (err) {
@@ -65,5 +67,5 @@ app.get("*", async (req, res) => {
 });
 
 app.listen(PORT, () =>
-  console.log(`✅ AI Proxy running on port ${PORT}`)
+  console.log(`✅ AI Proxy running at http://localhost:${PORT}`)
 );
