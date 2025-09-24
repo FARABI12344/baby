@@ -7,16 +7,16 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Simple cooldown map by IP
+// Simple cooldown map by user
 const cooldowns = new Map();
 const COOLDOWN_MS = 1000; // 1 second
 
-// Conversation memory per IP
+// Conversation memory per user
 const conversationMemory = new Map();
-const MEMORY_LIMIT = 10; // Keep last 10 messages per IP
+const MEMORY_LIMIT = 10; // Keep last 10 messages per user
 
 // AI request with multiline instruction + fallback logic
-async function getAI(ip, userPrompt) {
+async function getAI(userKey, userPrompt) {
   const instruction = `You are a AI chatbot made by OpenAI. You were modified by Ariyan Farabi.
 Always reply in short,
 Friendly and respectful – no mean or rude words.  
@@ -30,17 +30,19 @@ Helpful & cooperative – answer questions, offer tips, or play along with the g
 **Keep it short** – 1–3 sentences per message.
 `;
 
-  // Get conversation history for this IP
-  let history = conversationMemory.get(ip) || [];
-  let chatHistoryText = history.map(msg => `${msg.isUser ? "User" : "Assistant"}: ${msg.text}`).join("\n");
+  // Get conversation history for this user
+  let history = conversationMemory.get(userKey) || [];
+  let chatHistoryText = history
+    .map(msg => `${msg.isUser ? "User" : "Assistant"}: ${msg.text}`)
+    .join("\n");
 
   // Build full prompt with memory
   const fullPrompt = `${instruction}\n${chatHistoryText}\nUser: ${userPrompt}\nAssistant:`;
 
   const configs = [
-    { type: "get", model: "openai", label: "1st: model openai" },
-    { type: "get", model: "mistral", label: "2nd: model mistral" },
-    { type: "get", label: "3rd: fallback no model" }
+    { model: "openai", label: "1st: model openai" },
+    { model: "mistral", label: "2nd: model mistral" },
+    { model: null, label: "3rd: fallback no model" }
   ];
 
   for (const config of configs) {
@@ -59,18 +61,21 @@ Helpful & cooperative – answer questions, offer tips, or play along with the g
 
       if (!resp.ok) throw new Error(`Status ${resp.status} ${resp.statusText}`);
       const text = await resp.text();
+
       if (text && text.trim().length > 0) {
         // Save this message to memory
         history.push({ isUser: true, text: userPrompt });
         history.push({ isUser: false, text: text.trim() });
 
         // Keep only last MEMORY_LIMIT messages
-        if (history.length > MEMORY_LIMIT * 2) history = history.slice(-MEMORY_LIMIT * 2);
+        if (history.length > MEMORY_LIMIT * 2) {
+          history = history.slice(-MEMORY_LIMIT * 2);
+        }
 
-        conversationMemory.set(ip, history);
+        conversationMemory.set(userKey, history);
         return { text: text.trim(), used: config.label };
       }
-    } catch (err) {
+    } catch {
       continue; // try next config
     }
   }
@@ -78,31 +83,31 @@ Helpful & cooperative – answer questions, offer tips, or play along with the g
   throw new Error("Failed to get AI response after trying all models");
 }
 
-// Handle prompt from path instead of query
-app.get("/:prompt", async (req, res) => {
-  const ip = req.ip;
+// Handle prompt via query params: /?prompt=hi&user=123
+app.get("/", async (req, res) => {
+  const prompt = req.query.prompt;
+  const user = req.query.user || req.ip; // prefer user, fallback to IP
   const now = Date.now();
 
-  if (cooldowns.has(ip)) {
-    const lastTime = cooldowns.get(ip);
-    if (now - lastTime < COOLDOWN_MS) {
-      res.status(429).send(
-        "Hello! It looks like you might have sent a quick message. How can I assist you today? Or is there something specific you'd like to talk about?"
-      );
-      return;
-    }
-  }
-
-  cooldowns.set(ip, now);
-
-  const prompt = req.params.prompt;
   if (!prompt) {
     res.status(400).send("❌ Missing prompt");
     return;
   }
 
+  // Cooldown check
+  if (cooldowns.has(user)) {
+    const lastTime = cooldowns.get(user);
+    if (now - lastTime < COOLDOWN_MS) {
+      res.status(429).send(
+        "Hello! Slow down ⏳ one sec before sending again."
+      );
+      return;
+    }
+  }
+  cooldowns.set(user, now);
+
   try {
-    const result = await getAI(ip, prompt);
+    const result = await getAI(user, prompt);
     res.setHeader("Content-Type", "text/plain");
     res.send(result.text); // plain text response
   } catch (err) {
@@ -110,4 +115,6 @@ app.get("/:prompt", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ AI Proxy running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ AI Proxy running on port ${PORT}`)
+);
