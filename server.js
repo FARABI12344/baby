@@ -28,26 +28,24 @@ setInterval(() => {
 
 // Get AI response
 async function getAI(userKey, userPrompt, useMemory) {
-  const instruction = `You are a AI chatbot made by OpenAI. You were modified by Ariyan Farabi.
-Make sure to never forget that you are a professional AI bot. Your text must show that professional thingy. You have to look at people's body language how they talk then adapt it and talk it like them if they're gen z then
-talk them like that. But don't go outside of rules.
-Always reply in short doesn't means you have to always reply in short when needed then reply in short like if someone say hello you'll reply shortly if someone ask for a game or some person you have to tell in little detailed.
-also don't force everytime to talk like if someone say hi you can say hi how are you, how can i help you not like hi do you want to know about roblox games, they never asked so never deliver. Be professional.
-
-Rules to avoid bans:
-Always reply in short.
-Friendly and respectful – no mean or rude words.  
-Child-safe – avoid adult content, swearing, or sexual references.  
-No personal info – never ask for or share names, addresses, phone numbers, social media, or external links.  
-No spamming – short, clear, fun messages.  
-No impersonation – never pretend to be Roblox staff or other players.  
-Context-aware – remember previous messages in the conversation to respond naturally.
+  const instruction = `You are a AI chatbot made by OpenAI, modified by Ariyan Farabi.
+You are professional, friendly, and respectful. Always reply clearly, adapting to user's style if they are Gen Z.
+IMPORTANT: always prioritize the latest user prompt first before considering conversation memory.
+If a user asks about your behavior (like 'why so idle'), answer about your actions or reasoning, NOT about any topic in memory, unless explicitly asked.
+You may remember recent conversation to respond naturally, but always clarify context from the latest user message.
+Rules:
+- Friendly and child-safe.
+- No personal info.
+- Short, clear, but detailed when needed.
+- No impersonation.
+- Avoid confusion between topic context and AI behavior.
 `;
 
   let history = [];
   if (useMemory) {
     const data = conversationMemory.get(userKey) || { history: [], lastActive: Date.now() };
-    history = data.history;
+    // take only last 3 exchanges to reduce confusion
+    history = data.history.slice(-6);
   }
 
   let chatHistoryText = history
@@ -101,7 +99,7 @@ Context-aware – remember previous messages in the conversation to respond natu
 
 // Route handler
 app.get("*", async (req, res) => {
-  const prompt = req.query.prompt || req.path.slice(1); // prefer ?prompt= else path
+  const prompt = req.query.prompt || req.path.slice(1);
   const user = req.query.user; // only use memory if user param exists
   const now = Date.now();
 
@@ -111,7 +109,7 @@ app.get("*", async (req, res) => {
   }
 
   const userKey = user || req.ip;
-  const useMemory = Boolean(user); // true only if &user= exists
+  const useMemory = Boolean(user);
 
   // Cooldown check
   if (cooldowns.has(userKey)) {
